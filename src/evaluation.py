@@ -1,8 +1,3 @@
-"""
-Model Evaluation Module
-Comprehensive evaluation and visualization for fake news detection models
-"""
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
