@@ -1,8 +1,3 @@
-"""
-Model Manager Module
-Complete model management with versioning, metadata, and registry
-"""
-
 import os
 import json
 import joblib
