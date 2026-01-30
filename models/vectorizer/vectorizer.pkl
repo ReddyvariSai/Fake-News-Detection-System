@@ -1,0 +1,28 @@
+python -c "
+import joblib
+from sklearn.feature_extraction.text import TfidfVectorizer
+import os
+
+# Create directory
+os.makedirs('models', exist_ok=True)
+
+# Create vectorizer
+vectorizer = TfidfVectorizer(
+    max_features=1000,
+    ngram_range=(1, 2),
+    stop_words='english'
+)
+
+# Fit with sample data
+sample_texts = [
+    'real news article about science',
+    'fake news breaking sensational',
+    'government report economic data',
+    'conspiracy theory secret leak'
+]
+vectorizer.fit(sample_texts)
+
+# Save
+joblib.dump(vectorizer, 'models/vectorizer.pkl')
+print('✅ vectorizer.pkl created! Vocabulary size:', len(vectorizer.get_feature_names_out()))
+"
