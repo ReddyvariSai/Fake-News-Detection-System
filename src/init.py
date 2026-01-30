@@ -1,11 +1,3 @@
-"""
-Fake News Detection Package
-Machine Learning for Truth Discovery
-"""
-
-__version__ = "1.0.0"
-__author__ = "Fake News Detection Team"
-__description__ = "A comprehensive machine learning system for detecting fake news"
 
 # Import key classes for easier access
 from .data_preprocessing import DataPreprocessor, EnhancedDataPreprocessor
