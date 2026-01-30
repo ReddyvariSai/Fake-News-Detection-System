@@ -64,21 +64,35 @@ Machine-Learning-for-Truth-Discovery/
 ```
 
 models/
-├── __init__.py                         # Models package initialization
-├── model_manager.py                    # Model management and versioning
-├── fake_news_model.pkl                 # Main trained model
-├── vectorizer.pkl                      # Feature vectorizer
-├── preprocessor.pkl                    # Text preprocessor
-├── scaler.pkl                          # Feature scaler
-├── metadata.json                       # Model metadata
-├── version_1.0.0/                      # Versioned model directory
-│   ├── fake_news_model_v1.pkl
-│   ├── vectorizer_v1.pkl
-│   └── metadata_v1.json
-└── best_models/                        # Best models from different algorithms
-    ├── random_forest_best.pkl
-    ├── xgboost_best.pkl
-    ├── logistic_regression_best.pkl
-    └── ensemble_best.pkl
+├── __init__.py
+├── model_manager.py
+├── current/                          # Symlink or reference to current version
+│   ├── fake_news_model.pkl
+│   ├── vectorizer.pkl
+│   ├── preprocessor.pkl
+│   ├── scaler.pkl
+│   └── metadata.json
+├── versions/                         # All historical versions
+│   ├── v1.0.0/
+│   │   ├── model.pkl
+│   │   ├── vectorizer.pkl
+│   │   ├── preprocessor.pkl
+│   │   ├── scaler.pkl
+│   │   ├── metadata.json
+│   │   └── metrics.json            # Add performance metrics
+│   └── v1.1.0/
+│       └── ...
+├── candidates/                       # Models under evaluation
+│   ├── random_forest/
+│   ├── xgboost/
+│   └── ensemble/
+├── artifacts/                        # Training artifacts
+│   ├── feature_importance.png
+│   ├── confusion_matrix.png
+│   └── training_logs.csv
+└── configs/                          # Model configurations
+    ├── base_config.yaml
+    ├── rf_config.yaml
+    └── xgb_config.yaml
 
 ```
