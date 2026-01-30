@@ -1,0 +1,765 @@
+# data/raw/analyze_fake_news.py
+"""
+Comprehensive analysis of fake_news.csv dataset
+"""
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+import json
+from datetime import datetime
+import logging
+from wordcloud import WordCloud
+from collections import Counter
+import re
+
+logger = logging.getLogger(__name__)
+
+class FakeNewsAnalyzer:
+    """Analyze fake_news.csv dataset"""
+    
+    def __init__(self, data_path: str = "data/raw/fake_news.csv"):
+        self.data_path = Path(data_path)
+        self.df = None
+        self.analysis_results = {}
+        
+    def load_data(self) -> pd.DataFrame:
+        """Load the fake_news.csv dataset"""
+        if not self.data_path.exists():
+            raise FileNotFoundError(f"Dataset not found at {self.data_path}")
+        
+        logger.info(f"Loading dataset from {self.data_path}")
+        self.df = pd.read_csv(self.data_path)
+        
+        # Convert date column to datetime
+        if 'date' in self.df.columns:
+            self.df['date'] = pd.to_datetime(self.df['date'], errors='coerce')
+        
+        logger.info(f"Loaded {len(self.df)} samples")
+        logger.info(f"Columns: {list(self.df.columns)}")
+        
+        return self.df
+    
+    def basic_statistics(self) -> dict:
+        """Calculate basic dataset statistics"""
+        if self.df is None:
+            self.load_data()
+        
+        stats = {
+            "basic_info": {
+                "total_samples": len(self.df),
+                "columns": list(self.df.columns),
+                "data_types": self.df.dtypes.astype(str).to_dict(),
+                "memory_usage_mb": self.df.memory_usage(deep=True).sum() / (1024 * 1024)
+            },
+            "missing_values": {
+                "count": self.df.isnull().sum().to_dict(),
+                "percentage": (self.df.isnull().sum() / len(self.df) * 100).to_dict()
+            }
+        }
+        
+        # Label statistics
+        if 'label' in self.df.columns:
+            label_counts = self.df['label'].value_counts()
+            stats["label_distribution"] = {
+                "counts": label_counts.to_dict(),
+                "percentages": (label_counts / len(self.df) * 100).round(2).to_dict(),
+                "imbalance_ratio": label_counts.min() / label_counts.max() if len(label_counts) > 1 else 1.0
+            }
+        
+        return stats
+    
+    def text_analysis(self) -> dict:
+        """Analyze text characteristics"""
+        if self.df is None:
+            self.load_data()
+        
+        if 'text' not in self.df.columns:
+            return {}
+        
+        analysis = {}
+        
+        # Basic text statistics
+        analysis["text_length"] = {
+            "char_count": {
+                "mean": float(self.df['text'].str.len().mean()),
+                "std": float(self.df['text'].str.len().std()),
+                "min": int(self.df['text'].str.len().min()),
+                "max": int(self.df['text'].str.len().max()),
+                "median": float(self.df['text'].str.len().median())
+            },
+            "word_count": {
+                "mean": float(self.df['text'].str.split().str.len().mean()),
+                "std": float(self.df['text'].str.split().str.len().std()),
+                "min": int(self.df['text'].str.split().str.len().min()),
+                "max": int(self.df['text'].str.split().str.len().max())
+            }
+        }
+        
+        # Text characteristics by label
+        if 'label' in self.df.columns:
+            for label in [0, 1]:
+                label_texts = self.df[self.df['label'] == label]['text']
+                label_name = "real" if label == 0 else "fake"
+                
+                analysis[f"{label_name}_news"] = {
+                    "avg_chars": float(label_texts.str.len().mean()),
+                    "avg_words": float(label_texts.str.split().str.len().mean()),
+                    "avg_sentences": float(label_texts.apply(self._count_sentences).mean()),
+                    "exclamation_rate": float((label_texts.str.contains('!')).mean()),
+                    "uppercase_rate": float((label_texts.apply(self._has_uppercase_words)).mean()),
+                    "question_rate": float((label_texts.str.contains('\?')).mean())
+                }
+        
+        # Vocabulary analysis
+        all_words = self._extract_words(self.df['text'])
+        analysis["vocabulary"] = {
+            "total_unique_words": len(set(all_words)),
+            "total_words": len(all_words),
+            "avg_words_per_doc": len(all_words) / len(self.df),
+            "most_common_words": dict(Counter(all_words).most_common(20))
+        }
+        
+        # By label vocabulary
+        if 'label' in self.df.columns:
+            for label in [0, 1]:
+                label_name = "real" if label == 0 else "fake"
+                label_texts = self.df[self.df['label'] == label]['text']
+                label_words = self._extract_words(label_texts)
+                
+                analysis[f"{label_name}_vocabulary"] = {
+                    "unique_words": len(set(label_words)),
+                    "most_common": dict(Counter(label_words).most_common(15))
+                }
+        
+        return analysis
+    
+    def source_analysis(self) -> dict:
+        """Analyze news sources"""
+        if self.df is None:
+            self.load_data()
+        
+        if 'source' not in self.df.columns:
+            return {}
+        
+        analysis = {}
+        
+        # Source distribution
+        source_counts = self.df['source'].value_counts()
+        analysis["source_distribution"] = {
+            "total_unique_sources": len(source_counts),
+            "top_10_sources": source_counts.head(10).to_dict()
+        }
+        
+        # Source credibility analysis
+        if 'label' in self.df.columns:
+            source_credibility = {}
+            for source in self.df['source'].unique():
+                source_df = self.df[self.df['source'] == source]
+                if len(source_df) > 10:  # Only analyze sources with enough samples
+                    fake_ratio = source_df['label'].mean()
+                    source_credibility[source] = {
+                        "total_articles": len(source_df),
+                        "fake_ratio": float(fake_ratio),
+                        "credibility": "low" if fake_ratio > 0.7 else "medium" if fake_ratio > 0.3 else "high"
+                    }
+            
+            analysis["source_credibility"] = source_credibility
+        
+        return analysis
+    
+    def temporal_analysis(self) -> dict:
+        """Analyze temporal patterns"""
+        if self.df is None:
+            self.load_data()
+        
+        if 'date' not in self.df.columns:
+            return {}
+        
+        analysis = {}
+        
+        # Date range
+        analysis["date_range"] = {
+            "start": self.df['date'].min().strftime("%Y-%m-%d") if not pd.isna(self.df['date'].min()) else None,
+            "end": self.df['date'].max().strftime("%Y-%m-%d") if not pd.isna(self.df['date'].max()) else None,
+            "days_covered": (self.df['date'].max() - self.df['date'].min()).days if not pd.isna(self.df['date'].min()) and not pd.isna(self.df['date'].max()) else None
+        }
+        
+        # Temporal distribution
+        self.df['year_month'] = self.df['date'].dt.to_period('M')
+        monthly_counts = self.df['year_month'].value_counts().sort_index()
+        analysis["monthly_distribution"] = {
+            "counts": {str(k): int(v) for k, v in monthly_counts.items()},
+            "trend": "increasing" if len(monthly_counts) > 1 and monthly_counts.iloc[-1] > monthly_counts.iloc[0] else "decreasing"
+        }
+        
+        # Fake news over time
+        if 'label' in self.df.columns:
+            monthly_fake = self.df[self.df['label'] == 1].groupby('year_month').size()
+            monthly_total = self.df.groupby('year_month').size()
+            fake_ratio_over_time = (monthly_fake / monthly_total).fillna(0)
+            
+            analysis["fake_news_trend"] = {
+                "fake_ratio": {str(k): float(v) for k, v in fake_ratio_over_time.items()},
+                "avg_fake_ratio": float(fake_ratio_over_time.mean())
+            }
+        
+        return analysis
+    
+    def linguistic_analysis(self) -> dict:
+        """Analyze linguistic features"""
+        if self.df is None:
+            self.load_data()
+        
+        if 'text' not in self.df.columns or 'label' not in self.df.columns:
+            return {}
+        
+        analysis = {}
+        
+        # Sentiment indicators
+        positive_words = ['good', 'great', 'excellent', 'positive', 'happy', 'success', 'win']
+        negative_words = ['bad', 'terrible', 'awful', 'negative', 'sad', 'fail', 'lose']
+        
+        for label in [0, 1]:
+            label_name = "real" if label == 0 else "fake"
+            label_texts = self.df[self.df['label'] == label]['text'].str.lower()
+            
+            analysis[f"{label_name}_sentiment"] = {
+                "positive_word_rate": float(label_texts.apply(lambda x: sum(1 for word in positive_words if word in str(x))).mean()),
+                "negative_word_rate": float(label_texts.apply(lambda x: sum(1 for word in negative_words if word in str(x))).mean()),
+                "emotional_words_rate": float(label_texts.apply(lambda x: sum(1 for word in positive_words + negative_words if word in str(x))).mean())
+            }
+        
+        # Readability metrics (simplified)
+        for label in [0, 1]:
+            label_name = "real" if label == 0 else "fake"
+            label_texts = self.df[self.df['label'] == label]['text']
+            
+            analysis[f"{label_name}_readability"] = {
+                "avg_sentence_length": float(label_texts.apply(self._avg_sentence_length).mean()),
+                "avg_word_length": float(label_texts.apply(self._avg_word_length).mean()),
+                "complex_word_ratio": float(label_texts.apply(self._complex_word_ratio).mean())
+            }
+        
+        return analysis
+    
+    def _count_sentences(self, text: str) -> int:
+        """Count sentences in text"""
+        if not isinstance(text, str):
+            return 0
+        # Simple sentence counting by punctuation
+        sentences = re.split(r'[.!?]+', text)
+        return len([s for s in sentences if s.strip()])
+    
+    def _has_uppercase_words(self, text: str) -> bool:
+        """Check if text has all-caps words"""
+        if not isinstance(text, str):
+            return False
+        words = text.split()
+        return any(word.isupper() and len(word) > 2 for word in words)
+    
+    def _extract_words(self, texts: pd.Series) -> list:
+        """Extract words from text series"""
+        all_words = []
+        for text in texts.dropna():
+            words = re.findall(r'\b[a-zA-Z]{3,}\b', str(text).lower())
+            all_words.extend(words)
+        return all_words
+    
+    def _avg_sentence_length(self, text: str) -> float:
+        """Calculate average sentence length"""
+        sentences = self._count_sentences(text)
+        if sentences == 0:
+            return 0
+        words = len(str(text).split())
+        return words / sentences
+    
+    def _avg_word_length(self, text: str) -> float:
+        """Calculate average word length"""
+        words = str(text).split()
+        if not words:
+            return 0
+        return sum(len(word) for word in words) / len(words)
+    
+    def _complex_word_ratio(self, text: str) -> float:
+        """Calculate ratio of complex words (words with 3+ syllables)"""
+        words = str(text).split()
+        if not words:
+            return 0
+        
+        # Simplified: words with 6+ characters are "complex"
+        complex_words = sum(1 for word in words if len(word) >= 6)
+        return complex_words / len(words)
+    
+    def comprehensive_analysis(self) -> dict:
+        """Run comprehensive analysis"""
+        logger.info("Starting comprehensive analysis...")
+        
+        self.analysis_results = {
+            "analysis_date": datetime.now().isoformat(),
+            "dataset": str(self.data_path),
+            "basic_statistics": self.basic_statistics(),
+            "text_analysis": self.text_analysis(),
+            "source_analysis": self.source_analysis(),
+            "temporal_analysis": self.temporal_analysis(),
+            "linguistic_analysis": self.linguistic_analysis()
+        }
+        
+        # Save analysis results
+        self.save_analysis_results()
+        
+        # Create visualizations
+        self.create_visualizations()
+        
+        # Generate report
+        self.generate_report()
+        
+        logger.info("Comprehensive analysis completed")
+        return self.analysis_results
+    
+    def save_analysis_results(self, output_dir: str = "data/processed/analysis"):
+        """Save analysis results to files"""
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # Save JSON results
+        json_path = output_path / "fake_news_analysis.json"
+        with open(json_path, 'w') as f:
+            json.dump(self.analysis_results, f, indent=2, default=str)
+        
+        logger.info(f"Analysis results saved to {json_path}")
+        
+        # Save summary as CSV
+        self._save_summary_csv(output_path)
+        
+        return json_path
+    
+    def _save_summary_csv(self, output_path: Path):
+        """Save key metrics as CSV"""
+        summary_data = []
+        
+        # Basic metrics
+        summary_data.append({
+            "metric": "total_samples",
+            "value": self.analysis_results["basic_statistics"]["basic_info"]["total_samples"],
+            "category": "basic"
+        })
+        
+        # Label distribution
+        if "label_distribution" in self.analysis_results["basic_statistics"]:
+            dist = self.analysis_results["basic_statistics"]["label_distribution"]
+            summary_data.append({
+                "metric": "fake_news_percentage",
+                "value": dist["percentages"].get(1, 0),
+                "category": "labels"
+            })
+            summary_data.append({
+                "metric": "imbalance_ratio",
+                "value": dist["imbalance_ratio"],
+                "category": "labels"
+            })
+        
+        # Text metrics
+        if "text_analysis" in self.analysis_results and "text_length" in self.analysis_results["text_analysis"]:
+            text_len = self.analysis_results["text_analysis"]["text_length"]
+            summary_data.append({
+                "metric": "avg_word_count",
+                "value": text_len["word_count"]["mean"],
+                "category": "text"
+            })
+            summary_data.append({
+                "metric": "avg_char_count",
+                "value": text_len["char_count"]["mean"],
+                "category": "text"
+            })
+        
+        # Fake vs real differences
+        if "text_analysis" in self.analysis_results and "fake_news" in self.analysis_results["text_analysis"]:
+            fake = self.analysis_results["text_analysis"]["fake_news"]
+            real = self.analysis_results["text_analysis"]["real_news"]
+            
+            summary_data.append({
+                "metric": "fake_exclamation_rate",
+                "value": fake["exclamation_rate"],
+                "category": "comparison"
+            })
+            summary_data.append({
+                "metric": "real_exclamation_rate",
+                "value": real["exclamation_rate"],
+                "category": "comparison"
+            })
+        
+        # Save CSV
+        summary_df = pd.DataFrame(summary_data)
+        csv_path = output_path / "analysis_summary.csv"
+        summary_df.to_csv(csv_path, index=False)
+        
+        logger.info(f"Analysis summary saved to {csv_path}")
+    
+    def create_visualizations(self, output_dir: str = "data/processed/analysis/figures"):
+        """Create visualization plots"""
+        if self.df is None:
+            self.load_data()
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        plt.style.use('seaborn-v0_8')
+        sns.set_palette("husl")
+        
+        # 1. Label distribution
+        self._plot_label_distribution(output_path)
+        
+        # 2. Text length distribution
+        self._plot_text_length_distribution(output_path)
+        
+        # 3. Source distribution
+        self._plot_source_distribution(output_path)
+        
+        # 4. Temporal distribution
+        self._plot_temporal_distribution(output_path)
+        
+        # 5. Word clouds
+        self._plot_wordclouds(output_path)
+        
+        # 6. Feature comparisons
+        self._plot_feature_comparisons(output_path)
+        
+        logger.info(f"Visualizations saved to {output_path}")
+    
+    def _plot_label_distribution(self, output_path: Path):
+        """Plot label distribution"""
+        if 'label' not in self.df.columns:
+            return
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+        
+        # Count plot
+        label_counts = self.df['label'].value_counts()
+        colors = ['lightblue', 'lightcoral']
+        labels = ['Real (0)', 'Fake (1)']
+        
+        bars = ax1.bar(labels, label_counts.values, color=colors, edgecolor='black')
+        ax1.set_title('Label Distribution (Count)')
+        ax1.set_ylabel('Number of Articles')
+        
+        # Add count labels on bars
+        for bar, count in zip(bars, label_counts.values):
+            height = bar.get_height()
+            ax1.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                    f'{count}', ha='center', va='bottom')
+        
+        # Pie chart
+        ax2.pie(label_counts.values, labels=labels, autopct='%1.1f%%',
+               colors=colors, startangle=90)
+        ax2.set_title('Label Distribution (Percentage)')
+        
+        plt.tight_layout()
+        plt.savefig(output_path / 'label_distribution.png', dpi=300, bbox_inches='tight')
+        plt.close()
+    
+    def _plot_text_length_distribution(self, output_path: Path):
+        """Plot text length distribution by label"""
+        if 'text' not in self.df.columns or 'label' not in self.df.columns:
+            return
+        
+        self.df['text_length'] = self.df['text'].str.len()
+        
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        
+        # Histogram
+        for label, color, label_name in [(0, 'blue', 'Real'), (1, 'red', 'Fake')]:
+            label_df = self.df[self.df['label'] == label]
+            axes[0].hist(label_df['text_length'], bins=50, alpha=0.5,
+                        color=color, label=label_name, edgecolor='black')
+        
+        axes[0].set_title('Text Length Distribution by Label')
+        axes[0].set_xlabel('Text Length (characters)')
+        axes[0].set_ylabel('Frequency')
+        axes[0].legend()
+        axes[0].grid(True, alpha=0.3)
+        
+        # Box plot
+        data = [self.df[self.df['label'] == 0]['text_length'],
+                self.df[self.df['label'] == 1]['text_length']]
+        axes[1].boxplot(data, labels=['Real', 'Fake'])
+        axes[1].set_title('Text Length Comparison')
+        axes[1].set_ylabel('Text Length (characters)')
+        axes[1].grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(output_path / 'text_length_distribution.png', dpi=300, bbox_inches='tight')
+        plt.close()
+    
+    def _plot_source_distribution(self, output_path: Path):
+        """Plot source distribution"""
+        if 'source' not in self.df.columns:
+            return
+        
+        # Get top 10 sources
+        top_sources = self.df['source'].value_counts().head(10)
+        
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        bars = ax.barh(range(len(top_sources)), top_sources.values)
+        ax.set_yticks(range(len(top_sources)))
+        ax.set_yticklabels(top_sources.index)
+        ax.set_xlabel('Number of Articles')
+        ax.set_title('Top 10 News Sources')
+        
+        # Add count labels
+        for i, (bar, count) in enumerate(zip(bars, top_sources.values)):
+            ax.text(count, bar.get_y() + bar.get_height()/2,
+                   f' {count}', va='center')
+        
+        plt.tight_layout()
+        plt.savefig(output_path / 'source_distribution.png', dpi=300, bbox_inches='tight')
+        plt.close()
+    
+    def _plot_temporal_distribution(self, output_path: Path):
+        """Plot temporal distribution"""
+        if 'date' not in self.df.columns:
+            return
+        
+        # Monthly distribution
+        self.df['year_month'] = self.df['date'].dt.to_period('M').astype(str)
+        monthly_counts = self.df['year_month'].value_counts().sort_index()
+        
+        fig, ax = plt.subplots(figsize=(14, 6))
+        
+        ax.plot(range(len(monthly_counts)), monthly_counts.values, marker='o', linewidth=2)
+        ax.set_xlabel('Month')
+        ax.set_ylabel('Number of Articles')
+        ax.set_title('Monthly Article Distribution')
+        ax.set_xticks(range(len(monthly_counts)))
+        ax.set_xticklabels(monthly_counts.index, rotation=45, ha='right')
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(output_path / 'temporal_distribution.png', dpi=300, bbox_inches='tight')
+        plt.close()
+    
+    def _plot_wordclouds(self, output_path: Path):
+        """Create word clouds for real vs fake news"""
+        if 'text' not in self.df.columns or 'label' not in self.df.columns:
+            return
+        
+        fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+        
+        for idx, label in enumerate([0, 1]):
+            label_name = "Real News" if label == 0 else "Fake News"
+            label_texts = self.df[self.df['label'] == label]['text']
+            
+            # Combine all texts
+            all_text = ' '.join(label_texts.dropna().astype(str))
+            
+            # Generate word cloud
+            wordcloud = WordCloud(
+                width=800,
+                height=400,
+                background_color='white',
+                max_words=150,
+                contour_width=3,
+                contour_color='steelblue'
+            ).generate(all_text)
+            
+            axes[idx].imshow(wordcloud, interpolation='bilinear')
+            axes[idx].set_title(f'Word Cloud: {label_name}')
+            axes[idx].axis('off')
+        
+        plt.tight_layout()
+        plt.savefig(output_path / 'wordclouds.png', dpi=300, bbox_inches='tight')
+        plt.close()
+    
+    def _plot_feature_comparisons(self, output_path: Path):
+        """Plot comparisons of various features"""
+        if 'label' not in self.df.columns:
+            return
+        
+        features_to_plot = []
+        
+        # Check for available features
+        if 'has_exclamation' in self.df.columns:
+            features_to_plot.append('has_exclamation')
+        if 'has_uppercase' in self.df.columns:
+            features_to_plot.append('has_uppercase')
+        if 'word_count' in self.df.columns:
+            features_to_plot.append('word_count')
+        
+        if not features_to_plot:
+            return
+        
+        n_features = len(features_to_plot)
+        fig, axes = plt.subplots(1, n_features, figsize=(5 * n_features, 5))
+        
+        if n_features == 1:
+            axes = [axes]
+        
+        for idx, feature in enumerate(features_to_plot):
+            if feature in ['has_exclamation', 'has_uppercase']:
+                # Binary features - bar plot
+                fake_mean = self.df[self.df['label'] == 1][feature].mean()
+                real_mean = self.df[self.df['label'] == 0][feature].mean()
+                
+                axes[idx].bar(['Real', 'Fake'], [real_mean, fake_mean],
+                            color=['blue', 'red'], alpha=0.7, edgecolor='black')
+                axes[idx].set_ylabel(f'Percentage with {feature}')
+                axes[idx].set_title(f'{feature.replace("_", " ").title()} by Label')
+                axes[idx].grid(True, alpha=0.3)
+                
+                # Add value labels
+                for i, v in enumerate([real_mean, fake_mean]):
+                    axes[idx].text(i, v + 0.01, f'{v:.2%}', ha='center')
+            
+            elif feature == 'word_count':
+                # Numerical feature - box plot
+                data = [self.df[self.df['label'] == 0][feature],
+                        self.df[self.df['label'] == 1][feature]]
+                axes[idx].boxplot(data, labels=['Real', 'Fake'])
+                axes[idx].set_ylabel('Word Count')
+                axes[idx].set_title('Word Count by Label')
+                axes[idx].grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(output_path / 'feature_comparisons.png', dpi=300, bbox_inches='tight')
+        plt.close()
+    
+    def generate_report(self, output_dir: str = "data/processed/analysis"):
+        """Generate comprehensive analysis report"""
+        output_path = Path(output_dir)
+        
+        report_content = f"""# Fake News Dataset Analysis Report
+
+## Dataset Information
+- **Dataset**: fake_news.csv
+- **Analysis Date**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- **Total Samples**: {self.analysis_results['basic_statistics']['basic_info']['total_samples']:,}
+- **Columns**: {len(self.analysis_results['basic_statistics']['basic_info']['columns'])}
+
+## Basic Statistics
+
+### Label Distribution
+"""
+        
+        if "label_distribution" in self.analysis_results["basic_statistics"]:
+            dist = self.analysis_results["basic_statistics"]["label_distribution"]
+            report_content += f"- **Real News (0)**: {dist['counts'].get(0, 0):,} samples ({dist['percentages'].get(0, 0):.1f}%)\n"
+            report_content += f"- **Fake News (1)**: {dist['counts'].get(1, 0):,} samples ({dist['percentages'].get(1, 0):.1f}%)\n"
+            report_content += f"- **Imbalance Ratio**: {dist['imbalance_ratio']:.3f}\n"
+        
+        report_content += f"""
+
+### Text Statistics
+"""
+        
+        if "text_analysis" in self.analysis_results and "text_length" in self.analysis_results["text_analysis"]:
+            text_len = self.analysis_results["text_analysis"]["text_length"]
+            report_content += f"- **Average Word Count**: {text_len['word_count']['mean']:.0f} words\n"
+            report_content += f"- **Average Character Count**: {text_len['char_count']['mean']:.0f} characters\n"
+            report_content += f"- **Minimum Words**: {text_len['word_count']['min']} words\n"
+            report_content += f"- **Maximum Words**: {text_len['word_count']['max']} words\n"
+        
+        report_content += f"""
+
+## Key Insights
+
+### Fake vs Real News Characteristics
+"""
+        
+        if "text_analysis" in self.analysis_results and "fake_news" in self.analysis_results["text_analysis"]:
+            fake = self.analysis_results["text_analysis"]["fake_news"]
+            real = self.analysis_results["text_analysis"]["real_news"]
+            
+            report_content += f"""
+**Text Characteristics:**
+- Fake news articles are {fake['avg_chars']/real['avg_chars']:.1f}x longer in characters
+- Fake news uses exclamation marks {fake['exclamation_rate']/real['exclamation_rate']:.1f}x more frequently
+- {fake['uppercase_rate']*100:.1f}% of fake articles contain all-caps words vs {real['uppercase_rate']*100:.1f}% of real articles
+
+**Sentiment Differences:**
+"""
+            
+            if "linguistic_analysis" in self.analysis_results:
+                ling = self.analysis_results["linguistic_analysis"]
+                if "fake_sentiment" in ling and "real_sentiment" in ling:
+                    report_content += f"- Fake news uses emotional words {ling['fake_sentiment']['emotional_words_rate']/ling['real_sentiment']['emotional_words_rate']:.1f}x more often\n"
+        
+        report_content += f"""
+
+## Recommendations for Model Training
+
+1. **Class Imbalance**: Consider techniques like oversampling, undersampling, or class weights
+2. **Text Length**: Normalize or truncate text lengths for consistent processing
+3. **Source Information**: Consider including source credibility as a feature
+4. **Temporal Split**: For time-based validation, split chronologically rather than randomly
+
+## Files Generated
+
+- `fake_news_analysis.json`: Complete analysis results
+- `analysis_summary.csv`: Key metrics in CSV format
+- `figures/`: Visualization plots
+- This report: `analysis_report.md`
+
+## Next Steps
+
+1. Preprocess text data (cleaning, tokenization, vectorization)
+2. Split data into train/validation/test sets
+3. Train baseline models
+4. Evaluate model performance
+5. Iterate with feature engineering and hyperparameter tuning
+"""
+        
+        report_path = output_path / "analysis_report.md"
+        with open(report_path, 'w') as f:
+            f.write(report_content)
+        
+        logger.info(f"Analysis report saved to {report_path}")
+
+
+def analyze_fake_news_dataset():
+    """Main function to analyze the fake_news.csv dataset"""
+    analyzer = FakeNewsAnalyzer()
+    
+    try:
+        # Run comprehensive analysis
+        results = analyzer.comprehensive_analysis()
+        
+        print("\n" + "="*60)
+        print("FAKE NEWS DATASET ANALYSIS COMPLETE")
+        print("="*60)
+        
+        # Print key findings
+        basic = results["basic_statistics"]
+        print(f"\n📊 Basic Statistics:")
+        print(f"   Total samples: {basic['basic_info']['total_samples']:,}")
+        
+        if "label_distribution" in basic:
+            dist = basic["label_distribution"]
+            print(f"   Fake news: {dist['counts'].get(1, 0):,} ({dist['percentages'].get(1, 0):.1f}%)")
+            print(f"   Real news: {dist['counts'].get(0, 0):,} ({dist['percentages'].get(0, 0):.1f}%)")
+        
+        if "text_analysis" in results and "text_length" in results["text_analysis"]:
+            text_len = results["text_analysis"]["text_length"]
+            print(f"\n📝 Text Statistics:")
+            print(f"   Avg words per article: {text_len['word_count']['mean']:.0f}")
+            print(f"   Avg chars per article: {text_len['char_count']['mean']:.0f}")
+        
+        print(f"\n📈 Analysis files saved to: data/processed/analysis/")
+        print(f"📋 Report: data/processed/analysis/analysis_report.md")
+        print(f"📊 Visualizations: data/processed/analysis/figures/")
+        
+        return results
+        
+    except Exception as e:
+        print(f"Error analyzing dataset: {e}")
+        raise
+
+
+if __name__ == "__main__":
+    import sys
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    print("Analyzing fake_news.csv dataset...")
+    results = analyze_fake_news_dataset()
