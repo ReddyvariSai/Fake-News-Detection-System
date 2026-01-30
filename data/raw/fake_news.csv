@@ -1,7 +1,549 @@
-# Run this Python code to create the CSV
-python -c "
+# data/raw/generate_sample_data.py
+"""
+Generate sample fake_news.csv dataset for development and testing
+"""
+
 import pandas as pd
-data = {'title': ['Real Study', 'Fake News'], 'text': ['Scientific research shows...', 'BREAKING: Secret cure!'], 'subject': ['science', 'health'], 'date': ['2023-10-15', '2023-10-14'], 'label': [0, 1]}
-pd.DataFrame(data).to_csv('fake_news.csv', index=False)
-print('File created!')
-"
+import numpy as np
+from datetime import datetime, timedelta
+import random
+import string
+from faker import Faker
+from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
+
+class FakeNewsDataGenerator:
+    """Generate synthetic fake news dataset for testing"""
+    
+    def __init__(self, seed: int = 42):
+        self.seed = seed
+        np.random.seed(seed)
+        random.seed(seed)
+        self.faker = Faker()
+        Faker.seed(seed)
+        
+        # Real news sources (credible)
+        self.real_sources = [
+            "The New York Times", "The Washington Post", "BBC News",
+            "Reuters", "Associated Press", "CNN", "The Guardian",
+            "NPR", "The Wall Street Journal", "Bloomberg"
+        ]
+        
+        # Fake news sources (questionable)
+        self.fake_sources = [
+            "TruthTeller Daily", "RealNews Network", "Freedom Press",
+            "Patriot Report", "Liberty Times", "American Truth",
+            "The People's Voice", "Uncensored News", "FactFinder",
+            "The Daily Reveal"
+        ]
+        
+        # Common authors
+        self.authors = [
+            "John Smith", "Sarah Johnson", "Michael Brown", "Emily Davis",
+            "David Wilson", "Jennifer Miller", "Robert Taylor", "Lisa Anderson",
+            "William Thomas", "Jessica Jackson"
+        ]
+        
+        # Topics for news articles
+        self.topics = [
+            "Politics", "Technology", "Health", "Science", "Entertainment",
+            "Sports", "Business", "Environment", "Education", "International"
+        ]
+        
+        # Fake news indicators (phrases commonly found in fake news)
+        self.fake_indicators = [
+            "SHOCKING REVELATION", "YOU WON'T BELIEVE", "THEY DON'T WANT YOU TO KNOW",
+            "BREAKING: EXCLUSIVE", "DOCTORS HATE THIS", "GOVERNMENT COVER-UP",
+            "MIRACLE CURE", "SECRET DOCUMENTS REVEAL", "THE TRUTH ABOUT",
+            "WHAT THEY'RE HIDING"
+        ]
+        
+        # Real news indicators (more measured language)
+        self.real_indicators = [
+            "Study finds", "According to research", "Experts say",
+            "Official report indicates", "Analysis shows", "Data suggests",
+            "Researchers discovered", "Evidence points to", "Surveys reveal",
+            "Statistics demonstrate"
+        ]
+    
+    def generate_text(self, is_fake: bool, min_length: int = 100, max_length: int = 1000) -> str:
+        """Generate news article text"""
+        if is_fake:
+            # Fake news text patterns
+            intro = random.choice(self.fake_indicators)
+            topic = random.choice(self.topics)
+            
+            # Common fake news patterns
+            patterns = [
+                f"{intro} about {topic}! A recent discovery has changed everything we know. ",
+                f"EXCLUSIVE: The truth about {topic} that mainstream media won't tell you. ",
+                f"BREAKING: New evidence suggests a major {topic.lower()} scandal. ",
+                f"You've been lied to about {topic}. Here's what's really happening. "
+            ]
+            
+            text = random.choice(patterns)
+            
+            # Add some paragraphs
+            paragraphs = random.randint(2, 5)
+            for _ in range(paragraphs):
+                paragraph = self.faker.paragraph(nb_sentences=random.randint(3, 8))
+                
+                # Add some sensational language
+                if random.random() > 0.7:
+                    paragraph = paragraph.upper() + " THIS IS HUGE! "
+                elif random.random() > 0.5:
+                    paragraph = "IMPORTANT: " + paragraph
+                
+                text += paragraph + " "
+            
+            # Add conspiracy theory elements
+            conspiracy_phrases = [
+                "The establishment doesn't want you to know this.",
+                "This information is being suppressed by the mainstream media.",
+                "Share this with everyone you know before it's taken down.",
+                "The truth will set you free.",
+                "Wake up, people!"
+            ]
+            
+            if random.random() > 0.5:
+                text += random.choice(conspiracy_phrases)
+        
+        else:
+            # Real news text patterns
+            intro = random.choice(self.real_indicators)
+            topic = random.choice(self.topics)
+            
+            # Real news patterns
+            patterns = [
+                f"A new study on {topic} has been published in a peer-reviewed journal. ",
+                f"According to experts in the field of {topic.lower()}, recent developments suggest ",
+                f"Official data released today shows trends in {topic.lower()} that ",
+                f"Researchers from multiple institutions have collaborated on a {topic.lower()} project. "
+            ]
+            
+            text = random.choice(patterns)
+            
+            # Add measured, factual paragraphs
+            paragraphs = random.randint(3, 6)
+            for _ in range(paragraphs):
+                paragraph = self.faker.paragraph(nb_sentences=random.randint(4, 10))
+                text += paragraph + " "
+            
+            # Add balanced perspective
+            balanced_phrases = [
+                "However, some experts caution that more research is needed.",
+                "The findings are consistent with previous studies in this area.",
+                "Limitations of the study include sample size and methodology.",
+                "Further research will be needed to confirm these results."
+            ]
+            
+            if random.random() > 0.3:
+                text += random.choice(balanced_phrases)
+        
+        # Ensure text length within bounds
+        if len(text) < min_length:
+            text += " " + self.faker.text(max_nb_chars=min_length - len(text))
+        elif len(text) > max_length:
+            text = text[:max_length]
+        
+        return text.strip()
+    
+    def generate_title(self, is_fake: bool, text: str) -> str:
+        """Generate article title based on text content"""
+        if is_fake:
+            # Sensational, clickbait titles
+            clickbait_patterns = [
+                f"SHOCKING: {random.choice(self.topics)} {random.choice(['Scandal', 'Cover-up', 'Revelation', 'Truth'])}",
+                f"You Won't Believe What Happened With {random.choice(self.topics)}",
+                f"The {random.choice(['Dark', 'Hidden', 'Secret'])} Truth About {random.choice(self.topics)}",
+                f"{random.choice(['BREAKING', 'EXCLUSIVE', 'URGENT'])}: {random.choice(self.topics)} Update",
+                f"This {random.choice(['One', 'Simple', 'Amazing'])} {random.choice(['Fact', 'Trick', 'Secret'])} About {random.choice(self.topics)}"
+            ]
+            return random.choice(clickbait_patterns)
+        else:
+            # Factual, descriptive titles
+            factual_patterns = [
+                f"New Study Examines {random.choice(self.topics)} Trends",
+                f"Research Shows Developments in {random.choice(self.topics)}",
+                f"Analysis of {random.choice(self.topics)} Data Reveals Patterns",
+                f"Expert Panel Discusses {random.choice(self.topics)} Issues",
+                f"Recent Developments in {random.choice(self.topics)} Field"
+            ]
+            return random.choice(factual_patterns)
+    
+    def generate_date(self, is_fake: bool) -> str:
+        """Generate publication date"""
+        # Fake news tends to be more recent (often breaking/urgent)
+        if is_fake:
+            days_ago = random.randint(0, 30)  # Mostly recent
+        else:
+            days_ago = random.randint(0, 365)  # Wider range
+        
+        date = datetime.now() - timedelta(days=days_ago)
+        return date.strftime("%Y-%m-%d")
+    
+    def generate_sample(self, sample_id: int, is_fake: bool) -> dict:
+        """Generate a single news article sample"""
+        text = self.generate_text(is_fake)
+        
+        return {
+            "id": sample_id,
+            "title": self.generate_title(is_fake, text),
+            "text": text,
+            "label": 1 if is_fake else 0,
+            "source": random.choice(self.fake_sources if is_fake else self.real_sources),
+            "date": self.generate_date(is_fake),
+            "author": random.choice(self.authors),
+            "topic": random.choice(self.topics),
+            "word_count": len(text.split()),
+            "char_count": len(text),
+            "has_exclamation": int("!" in text),
+            "has_uppercase": int(any(word.isupper() for word in text.split() if len(word) > 3)),
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+    
+    def generate_dataset(self, n_samples: int = 10000, fake_ratio: float = 0.4) -> pd.DataFrame:
+        """
+        Generate complete dataset
+        
+        Args:
+            n_samples: Total number of samples
+            fake_ratio: Proportion of fake news samples
+        
+        Returns:
+            DataFrame with generated dataset
+        """
+        logger.info(f"Generating {n_samples} samples with {fake_ratio*100:.0f}% fake news")
+        
+        samples = []
+        n_fake = int(n_samples * fake_ratio)
+        n_real = n_samples - n_fake
+        
+        # Generate fake news samples
+        for i in range(n_fake):
+            sample = self.generate_sample(i, is_fake=True)
+            samples.append(sample)
+            if (i + 1) % 1000 == 0:
+                logger.info(f"Generated {i + 1} fake news samples")
+        
+        # Generate real news samples
+        for i in range(n_real):
+            sample = self.generate_sample(n_fake + i, is_fake=False)
+            samples.append(sample)
+            if (i + 1) % 1000 == 0:
+                logger.info(f"Generated {i + 1} real news samples")
+        
+        df = pd.DataFrame(samples)
+        
+        # Shuffle the dataset
+        df = df.sample(frac=1, random_state=self.seed).reset_index(drop=True)
+        
+        logger.info(f"Dataset generated: {len(df)} total samples")
+        logger.info(f"Fake news: {len(df[df['label'] == 1])} samples")
+        logger.info(f"Real news: {len(df[df['label'] == 0])} samples")
+        
+        return df
+    
+    def save_dataset(self, df: pd.DataFrame, output_path: str = "data/raw/fake_news.csv"):
+        """Save generated dataset to CSV"""
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        df.to_csv(output_path, index=False)
+        logger.info(f"Dataset saved to {output_path}")
+        
+        # Also save a smaller version for testing
+        test_df = df.sample(min(1000, len(df)), random_state=self.seed)
+        test_path = output_path.parent / "fake_news_sample.csv"
+        test_df.to_csv(test_path, index=False)
+        logger.info(f"Sample dataset saved to {test_path}")
+        
+        # Save metadata
+        self.save_metadata(df, output_path.parent / "fake_news_metadata.json")
+    
+    def save_metadata(self, df: pd.DataFrame, metadata_path: Path):
+        """Save dataset metadata"""
+        metadata = {
+            "generated_date": datetime.now().isoformat(),
+            "total_samples": len(df),
+            "fake_samples": int(df["label"].sum()),
+            "real_samples": len(df) - int(df["label"].sum()),
+            "fake_ratio": df["label"].mean(),
+            "columns": list(df.columns),
+            "statistics": {
+                "word_count": {
+                    "mean": float(df["word_count"].mean()),
+                    "std": float(df["word_count"].std()),
+                    "min": int(df["word_count"].min()),
+                    "max": int(df["word_count"].max())
+                },
+                "char_count": {
+                    "mean": float(df["char_count"].mean()),
+                    "std": float(df["char_count"].std()),
+                    "min": int(df["char_count"].min()),
+                    "max": int(df["char_count"].max())
+                }
+            },
+            "source_distribution": df["source"].value_counts().to_dict(),
+            "author_distribution": df["author"].value_counts().to_dict(),
+            "topic_distribution": df["topic"].value_counts().to_dict()
+        }
+        
+        with open(metadata_path, 'w') as f:
+            import json
+            json.dump(metadata, f, indent=2)
+        
+        logger.info(f"Metadata saved to {metadata_path}")
+
+
+def generate_and_save_sample_data():
+    """Generate and save sample fake news dataset"""
+    generator = FakeNewsDataGenerator(seed=42)
+    
+    # Generate dataset
+    df = generator.generate_dataset(
+        n_samples=10000,  # 10,000 samples
+        fake_ratio=0.4    # 40% fake, 60% real
+    )
+    
+    # Save to data/raw/
+    generator.save_dataset(df)
+    
+    # Create data dictionary
+    create_data_dictionary(df)
+    
+    return df
+
+
+def create_data_dictionary(df: pd.DataFrame):
+    """Create comprehensive data dictionary"""
+    data_dict = {
+        "dataset_name": "fake_news.csv",
+        "description": "Synthetic fake news detection dataset",
+        "generated_date": datetime.now().strftime("%Y-%m-%d"),
+        "total_records": len(df),
+        "columns": {}
+    }
+    
+    # Define column descriptions
+    column_descriptions = {
+        "id": {
+            "description": "Unique identifier for each news article",
+            "data_type": "integer",
+            "range": f"{df['id'].min()} to {df['id'].max()}",
+            "unique_values": df["id"].nunique(),
+            "missing_values": df["id"].isnull().sum()
+        },
+        "title": {
+            "description": "Title of the news article",
+            "data_type": "string",
+            "example": df["title"].iloc[0] if len(df) > 0 else "",
+            "unique_values": df["title"].nunique(),
+            "missing_values": df["title"].isnull().sum(),
+            "avg_length": df["title"].str.len().mean()
+        },
+        "text": {
+            "description": "Full text content of the news article",
+            "data_type": "string",
+            "example": df["text"].iloc[0][:100] + "..." if len(df) > 0 else "",
+            "unique_values": df["text"].nunique(),
+            "missing_values": df["text"].isnull().sum(),
+            "avg_length": df["text"].str.len().mean(),
+            "word_count_stats": {
+                "mean": df["word_count"].mean(),
+                "min": df["word_count"].min(),
+                "max": df["word_count"].max()
+            }
+        },
+        "label": {
+            "description": "Binary classification label (0=real, 1=fake)",
+            "data_type": "integer",
+            "values": {0: "real news", 1: "fake news"},
+            "distribution": {
+                "real": len(df[df["label"] == 0]),
+                "fake": len(df[df["label"] == 1]),
+                "percentage_fake": (len(df[df["label"] == 1]) / len(df)) * 100
+            }
+        },
+        "source": {
+            "description": "News source or publication",
+            "data_type": "string",
+            "categories": {
+                "real_sources": [
+                    "The New York Times", "The Washington Post", "BBC News",
+                    "Reuters", "Associated Press", "CNN", "The Guardian",
+                    "NPR", "The Wall Street Journal", "Bloomberg"
+                ],
+                "fake_sources": [
+                    "TruthTeller Daily", "RealNews Network", "Freedom Press",
+                    "Patriot Report", "Liberty Times", "American Truth",
+                    "The People's Voice", "Uncensored News", "FactFinder",
+                    "The Daily Reveal"
+                ]
+            },
+            "unique_values": df["source"].nunique(),
+            "top_sources": df["source"].value_counts().head(5).to_dict()
+        },
+        "date": {
+            "description": "Publication date (YYYY-MM-DD)",
+            "data_type": "date",
+            "range": f"{df['date'].min()} to {df['date'].max()}",
+            "missing_values": df["date"].isnull().sum()
+        },
+        "author": {
+            "description": "Article author",
+            "data_type": "string",
+            "unique_values": df["author"].nunique(),
+            "missing_values": df["author"].isnull().sum(),
+            "top_authors": df["author"].value_counts().head(5).to_dict()
+        },
+        "topic": {
+            "description": "News topic/category",
+            "data_type": "string",
+            "categories": [
+                "Politics", "Technology", "Health", "Science", "Entertainment",
+                "Sports", "Business", "Environment", "Education", "International"
+            ],
+            "distribution": df["topic"].value_counts().to_dict()
+        },
+        "word_count": {
+            "description": "Number of words in the article",
+            "data_type": "integer",
+            "statistics": {
+                "mean": float(df["word_count"].mean()),
+                "std": float(df["word_count"].std()),
+                "min": int(df["word_count"].min()),
+                "max": int(df["word_count"].max()),
+                "median": float(df["word_count"].median())
+            }
+        },
+        "char_count": {
+            "description": "Number of characters in the article",
+            "data_type": "integer",
+            "statistics": {
+                "mean": float(df["char_count"].mean()),
+                "std": float(df["char_count"].std()),
+                "min": int(df["char_count"].min()),
+                "max": int(df["char_count"].max())
+            }
+        },
+        "has_exclamation": {
+            "description": "Indicator if article contains exclamation marks",
+            "data_type": "integer",
+            "values": {0: "no exclamation", 1: "has exclamation"},
+            "distribution": df["has_exclamation"].value_counts().to_dict()
+        },
+        "has_uppercase": {
+            "description": "Indicator if article contains all-caps words",
+            "data_type": "integer",
+            "values": {0: "no all-caps", 1: "has all-caps"},
+            "distribution": df["has_uppercase"].value_counts().to_dict()
+        },
+        "created_at": {
+            "description": "Timestamp when this record was generated",
+            "data_type": "datetime",
+            "format": "YYYY-MM-DD HH:MM:SS"
+        }
+    }
+    
+    data_dict["columns"] = column_descriptions
+    
+    # Save data dictionary
+    dict_path = Path("data/raw/fake_news_data_dictionary.json")
+    with open(dict_path, 'w') as f:
+        import json
+        json.dump(data_dict, f, indent=2)
+    
+    # Also save as markdown for readability
+    md_path = Path("data/raw/fake_news_data_dictionary.md")
+    save_data_dictionary_markdown(data_dict, md_path)
+    
+    logger.info(f"Data dictionary saved to {dict_path}")
+    logger.info(f"Markdown version saved to {md_path}")
+
+
+def save_data_dictionary_markdown(data_dict: dict, output_path: Path):
+    """Save data dictionary as markdown file"""
+    md_content = f"""# Fake News Dataset - Data Dictionary
+
+## Overview
+- **Dataset Name**: {data_dict['dataset_name']}
+- **Description**: {data_dict['description']}
+- **Generated Date**: {data_dict['generated_date']}
+- **Total Records**: {data_dict['total_records']:,}
+
+## Column Definitions
+
+| Column | Description | Data Type | Example/Notes |
+|--------|-------------|-----------|---------------|
+"""
+    
+    for col_name, col_info in data_dict["columns"].items():
+        description = col_info.get("description", "")
+        data_type = col_info.get("data_type", "")
+        
+        # Create notes column
+        notes = []
+        if "example" in col_info:
+            notes.append(f"Example: {col_info['example']}")
+        if "values" in col_info:
+            if isinstance(col_info["values"], dict):
+                notes.append(f"Values: {', '.join([f'{k}={v}' for k, v in col_info['values'].items()])}")
+        if "categories" in col_info:
+            if isinstance(col_info["categories"], list):
+                notes.append(f"Categories: {', '.join(col_info['categories'][:3])}{'...' if len(col_info['categories']) > 3 else ''}")
+        
+        notes_str = "; ".join(notes)
+        
+        md_content += f"| {col_name} | {description} | {data_type} | {notes_str} |\n"
+    
+    # Add statistics section
+    md_content += f"""
+
+## Dataset Statistics
+
+### Label Distribution
+- **Real News (0)**: {data_dict['columns']['label']['distribution']['real']:,} samples
+- **Fake News (1)**: {data_dict['columns']['label']['distribution']['fake']:,} samples
+- **Percentage Fake**: {data_dict['columns']['label']['distribution']['percentage_fake']:.1f}%
+
+### Text Statistics
+- **Average Word Count**: {data_dict['columns']['word_count']['statistics']['mean']:.0f} words
+- **Average Character Count**: {data_dict['columns']['char_count']['statistics']['mean']:.0f} characters
+- **Minimum Words**: {data_dict['columns']['word_count']['statistics']['min']} words
+- **Maximum Words**: {data_dict['columns']['word_count']['statistics']['max']} words
+
+### Source Distribution
+"""
+    
+    if "source" in data_dict["columns"] and "top_sources" in data_dict["columns"]["source"]:
+        for source, count in data_dict["columns"]["source"]["top_sources"].items():
+            md_content += f"- **{source}**: {count:,} samples\n"
+    
+    md_content += f"""
+
+### Topic Distribution
+"""
+    
+    if "topic" in data_dict["columns"] and "distribution" in data_dict["columns"]["topic"]:
+        for topic, count in data_dict["columns"]["topic"]["distribution"].items():
+            percentage = (count / data_dict["total_records"]) * 100
+            md_content += f"- **{topic}**: {count:,} samples ({percentage:.1f}%)\n"
+    
+    with open(output_path, 'w') as f:
+        f.write(md_content)
+
+
+if __name__ == "__main__":
+    import sys
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    print("Generating fake_news.csv dataset...")
+    df = generate_and_save_sample_data()
+    print(f"Generated {len(df)} samples")
+    print(f"Fake news: {len(df[df['label'] == 1])} samples")
+    print(f"Real news: {len(df[df['label'] == 0])} samples")
+    print("\nDataset saved to data/raw/fake_news.csv")
+    print("Data dictionary saved to data/raw/fake_news_data_dictionary.json")
