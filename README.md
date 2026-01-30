@@ -59,3 +59,26 @@ Machine-Learning-for-Truth-Discovery/
 └── main.py                                            
 
 ```
+## 📦 Complete models/ Directory Structure
+
+```
+
+models/
+├── __init__.py                         # Models package initialization
+├── model_manager.py                    # Model management and versioning
+├── fake_news_model.pkl                 # Main trained model
+├── vectorizer.pkl                      # Feature vectorizer
+├── preprocessor.pkl                    # Text preprocessor
+├── scaler.pkl                          # Feature scaler
+├── metadata.json                       # Model metadata
+├── version_1.0.0/                      # Versioned model directory
+│   ├── fake_news_model_v1.pkl
+│   ├── vectorizer_v1.pkl
+│   └── metadata_v1.json
+└── best_models/                        # Best models from different algorithms
+    ├── random_forest_best.pkl
+    ├── xgboost_best.pkl
+    ├── logistic_regression_best.pkl
+    └── ensemble_best.pkl
+
+```
