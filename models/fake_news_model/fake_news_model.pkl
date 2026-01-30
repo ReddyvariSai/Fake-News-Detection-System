@@ -1,7 +1,3 @@
-"""
-create_fake_news_model.py
-Create a real fake_news_model.pkl file immediately
-"""
 
 import joblib
 import pickle
