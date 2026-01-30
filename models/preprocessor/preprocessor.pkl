@@ -1,0 +1,28 @@
+python -c "
+import joblib
+import re
+import os
+from datetime import datetime
+
+class QuickPreprocessor:
+    def __init__(self):
+        self.version = '1.0.0'
+        self.created = datetime.now().isoformat()
+        
+    def preprocess(self, text):
+        if not text:
+            return ''
+        # Basic preprocessing
+        text = text.lower()
+        text = re.sub(r'http\S+|www\S+|https\S+', '', text)  # Remove URLs
+        text = re.sub(r'[^\w\s]', '', text)  # Remove punctuation
+        text = re.sub(r'\d+', '', text)  # Remove numbers
+        text = ' '.join(text.split())  # Remove extra spaces
+        return text
+
+# Create and save
+os.makedirs('models', exist_ok=True)
+preprocessor = QuickPreprocessor()
+joblib.dump(preprocessor, 'models/preprocessor.pkl')
+print('✅ preprocessor.pkl created!')
+"
