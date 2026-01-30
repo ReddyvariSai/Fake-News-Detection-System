@@ -1,0 +1,7 @@
+# Run this Python code to create the CSV
+python -c "
+import pandas as pd
+data = {'title': ['Real Study', 'Fake News'], 'text': ['Scientific research shows...', 'BREAKING: Secret cure!'], 'subject': ['science', 'health'], 'date': ['2023-10-15', '2023-10-14'], 'label': [0, 1]}
+pd.DataFrame(data).to_csv('fake_news.csv', index=False)
+print('File created!')
+"
