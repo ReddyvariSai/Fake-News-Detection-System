@@ -1,8 +1,3 @@
-"""
-Model Training Module
-Train and evaluate multiple machine learning models for fake news detection
-"""
-
 import pandas as pd
 import numpy as np
 import time
